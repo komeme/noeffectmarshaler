@@ -1,7 +1,52 @@
 package a
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
+type Student struct {
+	Id    int
+	Name  string
+	Score int
+}
+
+func (s Student) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Id   int
+		Name string
+	}{
+		s.Id,
+		s.Name,
+	})
+}
+
+type Teacher struct {
+	Id     int
+	Name   string
+	Salary int
+}
+
+func (t *Teacher) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Id   int
+		Name string
+	}{
+		t.Id,
+		t.Name,
+	})
+}
+
 func f() {
-	// The pattern can be written in regular expression.
-	var gopher int // want "pattern"
-	print(gopher)  // want "identifier is gopher"
+	var gopher int
+	print(gopher)
+
+	s := Student{1, "hoge", 100}
+	t := Teacher{2, "fuga", 200}
+
+	sStr, _ := json.Marshal(s)
+	tStr, _ := json.Marshal(t)
+
+	fmt.Println(sStr)
+	fmt.Println(tStr)
 }
