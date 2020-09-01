@@ -27,6 +27,7 @@ type Teacher struct {
 	Salary int
 }
 
+// pointer receiver
 func (t *Teacher) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Id   int
@@ -37,16 +38,18 @@ func (t *Teacher) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func f() {
-	var gopher int
-	print(gopher)
+func FakeFunction(v interface{}) ([]byte, error) {
+	return []byte{}, nil
+}
 
+func main() {
 	s := Student{1, "hoge", 100}
 	t := Teacher{2, "fuga", 200}
 
 	sStr, _ := json.Marshal(s)
 	tStr, _ := json.Marshal(t) // want "NG"
 	fmt.Println(t)
+	_, _ = FakeFunction(t)
 
 	fmt.Println(sStr)
 	fmt.Println(tStr)

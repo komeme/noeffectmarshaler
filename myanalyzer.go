@@ -60,7 +60,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			for _, arg := range n.Args {
 				tv, ok := pass.TypesInfo.Types[arg]
 				if !ok {
-					panic("hoge") // TODO prevent from using panic
+					return
 				}
 
 				isTarget := false
@@ -74,15 +74,20 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					continue
 				}
 
-				tv, ok = pass.TypesInfo.Types[n.Fun]
+				caller, ok := n.Fun.(*ast.SelectorExpr)
 				if !ok {
-					panic("hoge") // TODO prevent from using panic
+					return
 				}
 
-				fn := tv.Type.(*types.Signature)
-				if types.Identical(fn, jsonMarshalMethod.Type()) {
-					pass.Reportf(n.Pos(), "NG")
+				if pass.TypesInfo.ObjectOf(caller.Sel).Pkg() != jsonMarshalMethod.Pkg() {
+					continue
 				}
+
+				if caller.Sel.Name != "Marshal" { // TODO ハードコーディングやめたい
+					continue
+				}
+
+				pass.Reportf(n.Pos(), "NG")
 			}
 		}
 	})
