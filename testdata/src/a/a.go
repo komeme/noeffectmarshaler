@@ -45,7 +45,8 @@ func f() {
 	t := Teacher{2, "fuga", 200}
 
 	sStr, _ := json.Marshal(s)
-	tStr, _ := json.Marshal(t)
+	tStr, _ := json.Marshal(t) // want "NG"
+	fmt.Println(t)
 
 	fmt.Println(sStr)
 	fmt.Println(tStr)
