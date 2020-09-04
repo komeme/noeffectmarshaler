@@ -2,7 +2,6 @@ package myanalyzer
 
 import (
 	"errors"
-	"fmt"
 	"github.com/gostaticanalysis/analysisutil"
 	"github.com/gostaticanalysis/ident"
 	"go/ast"
@@ -64,7 +63,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	s := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	graph := static.CallGraph(s.Pkg.Prog)
 	callers := Callers(graph.Nodes[targetFunctions(graph)]) // json.Marshalを内部的に呼んでいく関数ら
-	fmt.Println(callers)
 
 	// json.Marshalに上記structが値渡しされている箇所を検出
 	inspect_ := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)

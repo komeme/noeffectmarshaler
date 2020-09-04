@@ -54,12 +54,16 @@ func main() {
 	t := Teacher{2, "fuga", 200}
 
 	fmt.Println(t)
-	sStr, _ := json.Marshal(s)
-	tStr, _ := json.Marshal(t) // want "NG"
-	_ = MiddleFunction(t)      // want "NG"
-	_, _ = alias(t)            //TODO want "NG"
+	sStr, _ := json.Marshal(s)     // OK
+	sStrPtr, _ := json.Marshal(&s) // OK
+	tStr, _ := json.Marshal(t)     // want "NG"
+	tStrPtr, _ := json.Marshal(&t) // OK
+	_ = MiddleFunction(t)          // want "NG"
+	_, _ = alias(t)                //TODO want "NG"
 	_, _ = FakeFunction(t)
 
 	fmt.Println(sStr)
 	fmt.Println(tStr)
+	fmt.Println(sStrPtr)
+	fmt.Println(tStrPtr)
 }
