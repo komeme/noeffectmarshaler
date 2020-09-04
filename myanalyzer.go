@@ -27,8 +27,12 @@ var Analyzer = &analysis.Analyzer{
 		inspect.Analyzer,
 		buildssa.Analyzer,
 	},
-	FactTypes: []analysis.Fact{new(isWrapper)},
+	FactTypes: []analysis.Fact{new(dummy)},
 }
+
+type dummy struct{}
+
+func (f *dummy) AFact() {}
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	// identify json.Marshaler Interface
@@ -53,64 +57,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// create call graph
 	s := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	graph := static.CallGraph(s.Pkg.Prog)
-	callers := Callers(graph.Nodes[targetFunctions(graph)]) // json.Marshalを内部的に呼んでいく関数ら
+	callers := Callers(graph.Nodes[targetFunctions(graph, "encoding/json", "Marshal")]) // json.Marshalを内部的に呼んでいく関数群
 
 	// json.Marshalに上記structが値渡しされている箇所を検出
-
-	//for _, srcFunc := range s.SrcFuncs {
-	//	for _, block := range srcFunc.Blocks {
-	//		for _, instr := range block.Instrs {
-	//			fmt.Println(pass.Fset.Position(instr.Pos()))
-	//
-	//			call, ok := instr.(ssa.CallInstruction)
-	//			if !ok {
-	//				continue
-	//			}
-	//
-	//			common := call.Common()
-	//			if common == nil {
-	//				continue
-	//			}
-	//
-	//			var isTargetCall bool
-	//			for _, arg := range common.Args {
-	//				var isTargetArg bool
-	//
-	//				for s, _ := range implementors {
-	//					t := arg.Type() // interface{}として認識しちゃう...
-	//					ts := s.Type()
-	//					if types.Identical(ts, t) {
-	//						isTargetArg = true
-	//					}
-	//				}
-	//				if isTargetArg {
-	//					isTargetCall = true
-	//				}
-	//			}
-	//
-	//			if !isTargetCall {
-	//				continue
-	//			}
-	//
-	//			callee := common.StaticCallee()
-	//			if callee == nil {
-	//				continue
-	//			}
-	//
-	//			fn, ok := callee.Object().(*types.Func)
-	//			if !ok {
-	//				continue
-	//			}
-	//
-	//			for caller, _ := range callers {
-	//				if caller.Func.Object() == fn {
-	//					pass.Reportf(instr.Pos(), "NG")
-	//				}
-	//			}
-	//		}
-	//	}
-	//}
-
 	inspect_ := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	inspect_.Preorder([]ast.Node{new(ast.CallExpr)}, func(n ast.Node) {
 		switch n := n.(type) {
@@ -171,13 +120,13 @@ func pointerReceivingImplementors(pass *analysis.Pass, iface *types.Interface) m
 }
 
 // TODO もっといい探し方
-func targetFunctions(graph *callgraph.Graph) *ssa.Function {
+func targetFunctions(graph *callgraph.Graph, pkgPath string, name string) *ssa.Function {
 	var tgt *ssa.Function
 	for function, _ := range graph.Nodes {
 		if function == nil || function.Pkg == nil {
 			continue
 		}
-		if function.Package().Pkg.Path() == "encoding/json" && function.Name() == "Marshal" {
+		if function.Package().Pkg.Path() == pkgPath && function.Name() == name {
 			tgt = function
 			break
 		}
@@ -205,7 +154,3 @@ func Callers(target *callgraph.Node) map[*callgraph.Node]bool {
 
 	return callers
 }
-
-type isWrapper struct{}
-
-func (f *isWrapper) AFact() {}
