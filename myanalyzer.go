@@ -2,6 +2,7 @@ package myanalyzer
 
 import (
 	"errors"
+	"fmt"
 	"github.com/gostaticanalysis/analysisutil"
 	"github.com/gostaticanalysis/ident"
 	"go/ast"
@@ -10,6 +11,9 @@ import (
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/callgraph"
+	"golang.org/x/tools/go/callgraph/static"
+	"golang.org/x/tools/go/ssa"
 )
 
 const doc = "myanalyzer is ..."
@@ -24,73 +28,127 @@ var Analyzer = &analysis.Analyzer{
 		inspect.Analyzer,
 		buildssa.Analyzer,
 	},
+	FactTypes: []analysis.Fact{new(isWrapper)},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	// identify json.Marshaler Interface
-	marshalerType, ok := analysisutil.TypeOf(pass, "encoding/json", "Marshaler").Underlying().(*types.Interface)
+	marshalerType := analysisutil.TypeOf(pass, "encoding/json", "Marshaler")
+	if marshalerType == nil {
+		return nil, nil
+	}
+	marshalerIf, ok := marshalerType.Underlying().(*types.Interface)
 	if !ok {
 		return nil, errors.New("failed to identify json.Marshaler Interface")
 	}
 
-	// identify json.Marshal Interface
-	jsonMarshalMethod := analysisutil.ObjectOf(pass, "encoding/json", "Marshal")
-	if jsonMarshalMethod == nil {
+	// identify json.Marshal Object
+	jsonMarshalObj := analysisutil.ObjectOf(pass, "encoding/json", "Marshal").(*types.Func)
+	if jsonMarshalObj == nil {
 		return nil, errors.New("failed to identify json.Marshal Function")
 	}
 
 	// search target struct in this analyzer
-	tgtStructs := make([]*types.TypeName, 0)
+	tgtStructs := make(map[*types.TypeName]bool)
 	for _, name := range pass.Pkg.Scope().Names() {
 		obj, ok := pass.Pkg.Scope().Lookup(name).(*types.TypeName)
 		if ok && obj != nil {
 			// json.Marshaler Interfaceをpointer receiverで実装しているstruct
-			if !types.Implements(obj.Type(), marshalerType) && types.Implements(types.NewPointer(obj.Type()), marshalerType) {
-				tgtStructs = append(tgtStructs, obj)
+			if !types.Implements(obj.Type(), marshalerIf) && types.Implements(types.NewPointer(obj.Type()), marshalerIf) {
+				tgtStructs[obj] = true
 			}
 		}
 	}
 
-	// json.Marshalに上記structが値渡しされている箇所を検出 // TODO 内部的にjson.Marshalを呼んでいるものを検出
+	// create call graph
+	s := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
+	graph := static.CallGraph(s.Pkg.Prog)
+	callers := Callers(graph.Nodes[targetFunctions(graph)]) // json.Marshalを内部的に呼んでいく関数ら
+	fmt.Println(callers)
 
+	// json.Marshalに上記structが値渡しされている箇所を検出
 	inspect_ := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	inspect_.Preorder([]ast.Node{new(ast.CallExpr)}, func(n ast.Node) {
 		switch n := n.(type) {
 		case *ast.CallExpr:
 			for _, arg := range n.Args {
+
 				tv, ok := pass.TypesInfo.Types[arg]
 				if !ok {
 					return
 				}
 
 				isTarget := false
-				for _, tgtStruct := range tgtStructs {
+				for tgtStruct := range tgtStructs {
 					if types.Identical(tv.Type, tgtStruct.Type()) {
 						isTarget = true
 					}
 				}
-
 				if !isTarget {
 					continue
 				}
 
-				caller, ok := n.Fun.(*ast.SelectorExpr)
-				if !ok {
-					return
+				switch fn := n.Fun.(type) {
+				case *ast.SelectorExpr:
+					funObj := pass.TypesInfo.ObjectOf(fn.Sel)
+					for caller, _ := range callers {
+						if funObj == caller.Func.Object() {
+							pass.Reportf(n.Pos(), "NG")
+							break
+						}
+					}
+				case *ast.Ident:
+					funObj := pass.TypesInfo.ObjectOf(fn)
+					for caller, _ := range callers {
+						if funObj == caller.Func.Object() {
+							pass.Reportf(n.Pos(), "NG")
+							break
+						}
+					}
 				}
-
-				if pass.TypesInfo.ObjectOf(caller.Sel).Pkg() != jsonMarshalMethod.Pkg() {
-					continue
-				}
-
-				if caller.Sel.Name != "Marshal" { // TODO ハードコーディングやめたい
-					continue
-				}
-
-				pass.Reportf(n.Pos(), "NG")
 			}
 		}
 	})
 
 	return nil, nil
 }
+
+// TODO もっといい探し方
+func targetFunctions(graph *callgraph.Graph) *ssa.Function {
+	var tgt *ssa.Function
+	for function, _ := range graph.Nodes {
+		if function == nil || function.Pkg == nil {
+			continue
+		}
+		if function.Package().Pkg.Path() == "encoding/json" && function.Name() == "Marshal" {
+			tgt = function
+			break
+		}
+	}
+
+	if tgt == nil {
+		return nil
+	}
+
+	return tgt
+}
+
+func Callers(target *callgraph.Node) map[*callgraph.Node]bool {
+	callers := make(map[*callgraph.Node]bool)
+	callers[target] = true
+
+	for _, edge := range target.In {
+		if _, ok := callers[edge.Caller]; ok {
+			continue
+		}
+		for caller := range Callers(edge.Caller) {
+			callers[caller] = true
+		}
+	}
+
+	return callers
+}
+
+type isWrapper struct{}
+
+func (f *isWrapper) AFact() {}
