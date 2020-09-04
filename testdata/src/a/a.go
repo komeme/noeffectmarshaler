@@ -59,7 +59,7 @@ func main() {
 	tStr, _ := json.Marshal(t)     // want "NG"
 	tStrPtr, _ := json.Marshal(&t) // OK
 	_ = MiddleFunction(t)          // want "NG"
-	_, _ = alias(t)                //TODO want "NG"
+	_, _ = alias(t)                // want "NG"
 	_, _ = FakeFunction(t)
 
 	fmt.Println(sStr)

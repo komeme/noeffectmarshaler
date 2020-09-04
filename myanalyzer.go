@@ -36,7 +36,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	if marshalerType == nil {
 		return nil, nil
 	}
-	marshalerIf, ok := marshalerType.Underlying().(*types.Interface)
+	marshalerIface, ok := marshalerType.Underlying().(*types.Interface)
 	if !ok {
 		return nil, errors.New("failed to identify json.Marshaler Interface")
 	}
@@ -48,16 +48,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	}
 
 	// search target struct in this analyzer
-	tgtStructs := make(map[*types.TypeName]bool)
-	for _, name := range pass.Pkg.Scope().Names() {
-		obj, ok := pass.Pkg.Scope().Lookup(name).(*types.TypeName)
-		if ok && obj != nil {
-			// json.Marshaler Interfaceをpointer receiverで実装しているstruct
-			if !types.Implements(obj.Type(), marshalerIf) && types.Implements(types.NewPointer(obj.Type()), marshalerIf) {
-				tgtStructs[obj] = true
-			}
-		}
-	}
+	implementors := pointerReceivingImplementors(pass, marshalerIface)
 
 	// create call graph
 	s := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
@@ -65,6 +56,61 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	callers := Callers(graph.Nodes[targetFunctions(graph)]) // json.Marshalを内部的に呼んでいく関数ら
 
 	// json.Marshalに上記structが値渡しされている箇所を検出
+
+	//for _, srcFunc := range s.SrcFuncs {
+	//	for _, block := range srcFunc.Blocks {
+	//		for _, instr := range block.Instrs {
+	//			fmt.Println(pass.Fset.Position(instr.Pos()))
+	//
+	//			call, ok := instr.(ssa.CallInstruction)
+	//			if !ok {
+	//				continue
+	//			}
+	//
+	//			common := call.Common()
+	//			if common == nil {
+	//				continue
+	//			}
+	//
+	//			var isTargetCall bool
+	//			for _, arg := range common.Args {
+	//				var isTargetArg bool
+	//
+	//				for s, _ := range implementors {
+	//					t := arg.Type() // interface{}として認識しちゃう...
+	//					ts := s.Type()
+	//					if types.Identical(ts, t) {
+	//						isTargetArg = true
+	//					}
+	//				}
+	//				if isTargetArg {
+	//					isTargetCall = true
+	//				}
+	//			}
+	//
+	//			if !isTargetCall {
+	//				continue
+	//			}
+	//
+	//			callee := common.StaticCallee()
+	//			if callee == nil {
+	//				continue
+	//			}
+	//
+	//			fn, ok := callee.Object().(*types.Func)
+	//			if !ok {
+	//				continue
+	//			}
+	//
+	//			for caller, _ := range callers {
+	//				if caller.Func.Object() == fn {
+	//					pass.Reportf(instr.Pos(), "NG")
+	//				}
+	//			}
+	//		}
+	//	}
+	//}
+
 	inspect_ := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	inspect_.Preorder([]ast.Node{new(ast.CallExpr)}, func(n ast.Node) {
 		switch n := n.(type) {
@@ -77,7 +123,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				}
 
 				isTarget := false
-				for tgtStruct := range tgtStructs {
+				for tgtStruct := range implementors {
 					if types.Identical(tv.Type, tgtStruct.Type()) {
 						isTarget = true
 					}
@@ -109,6 +155,19 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	})
 
 	return nil, nil
+}
+
+func pointerReceivingImplementors(pass *analysis.Pass, iface *types.Interface) map[*types.TypeName]bool {
+	result := make(map[*types.TypeName]bool)
+	for _, name := range pass.Pkg.Scope().Names() {
+		obj, ok := pass.Pkg.Scope().Lookup(name).(*types.TypeName)
+		if ok && obj != nil {
+			if !types.Implements(obj.Type(), iface) && types.Implements(types.NewPointer(obj.Type()), iface) {
+				result[obj] = true
+			}
+		}
+	}
+	return result
 }
 
 // TODO もっといい探し方
