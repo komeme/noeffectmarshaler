@@ -1,4 +1,4 @@
-package myanalyzer
+package noeffectmarshaler
 
 import (
 	"errors"
@@ -15,11 +15,11 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-const doc = "myanalyzer is ..."
+const doc = "noeffectmarshaler is ..."
 
 // Analyzer is ...
 var Analyzer = &analysis.Analyzer{
-	Name: "myanalyzer",
+	Name: "noeffectmarshaler",
 	Doc:  doc,
 	Run:  run,
 	Requires: []*analysis.Analyzer{

@@ -1,4 +1,4 @@
-module github.com/komeme/myanalyzer
+module github.com/komeme/noeffectmarshaler
 
 go 1.15
 
